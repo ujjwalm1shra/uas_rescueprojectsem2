@@ -13,9 +13,13 @@ to assist in search and rescue operations.
 
 # Tech Stack
 -Python 3.13.7
+
 -OpenCV 4.12.0
+
 -NumPy 2.2.6
+
 -Matplotlib 3.10.8
+
 
 # Notes
 This project is being developed incrementally with daily updates.
