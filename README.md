@@ -8,8 +8,13 @@ to assist in search and rescue operations.
 
 # Current Progress
 -Project structure created
+
 -OpenCV setup and testing completed
--Image loading and basic verification implemented
+
+-Image loading and basic verification done
+
+-Image processing and conversion of area denoted by land into yellow, and creation of output image folder.
+
 
 # Tech Stack
 -Python 3.13.7
