@@ -23,8 +23,6 @@ to assist in search and rescue operations.
 
 -NumPy 2.2.6
 
--Matplotlib 3.10.8
-
 
 # Notes
 This project is being developed incrementally with daily updates.
