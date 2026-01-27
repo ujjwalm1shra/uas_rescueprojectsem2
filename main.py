@@ -2,7 +2,7 @@ import cv2
 import numpy as np
 import os
 
-# ================= CONFIG =================
+
 output_folder = "outputs"
 os.makedirs(output_folder, exist_ok=True)
 
@@ -25,7 +25,7 @@ CAMP_CAPACITY = {
     "Grey": 2
 }
 
-# ================= HELPERS =================
+
 def detect_shape(cnt):
     peri = cv2.arcLength(cnt, True)
     approx = cv2.approxPolyDP(cnt, 0.03 * peri, True)
@@ -70,7 +70,6 @@ def distance(p1, p2):
     return np.linalg.norm(np.array(p1) - np.array(p2))
 
 
-# ================= USER INPUT =================
 file_name = input("Enter image name (e.g. 2.png): ").strip()
 input_path = os.path.join("images", file_name)
 
@@ -106,11 +105,11 @@ contours, _ = cv2.findContours(
 
 display[land_mask == 255] = (0,200,255)
 
-# ---------- RESET ----------
+
 people = []
 camps = []
 
-# ---------- DETECT OBJECTS ----------
+
 for cnt in contours:
     if cv2.contourArea(cnt) < 200:
         continue
@@ -141,7 +140,7 @@ for cnt in contours:
             "assigned": []
         })
 
-# ---------- ASSIGNMENT ----------
+
 assignments = []
 for p in people:
     for c in camps:
@@ -160,10 +159,10 @@ for a in assignments:
     a["c"]["assigned"].append(a["p"])
     used.add(id(a["p"]))
 
-# ---------- OUTPUT ----------
-print("\n==============================")
+
+
 print(f"IMAGE: {file_name}")
-print("==============================")
+print("\n")
 
 camp_scores = []
 for c in camps:
