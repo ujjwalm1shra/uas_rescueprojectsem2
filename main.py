@@ -3,10 +3,9 @@ import numpy as np
 import os
 
 
-output_folder = "outputs"
-os.makedirs(output_folder, exist_ok=True)
+# Features mapped with the respective values.
+OUTPUT_FOLDER = "outputs"
 
-# ================= PRIORITY TABLES =================
 AGE_PRIORITY = {
     "Star": 3,
     "Triangle": 2,
@@ -24,6 +23,16 @@ CAMP_CAPACITY = {
     "Pink": 3,
     "Grey": 2
 }
+
+
+# =============== UTILITY FUNCTIONS ===============
+def setup_output_folder():
+    os.makedirs(OUTPUT_FOLDER, exist_ok=True)
+
+
+def distance(p1, p2):
+    return np.linalg.norm(np.array(p1) - np.array(p2))
+
 
 
 def detect_shape(cnt):
@@ -66,114 +75,140 @@ def detect_color(cnt, hsv):
     return "Unknown"
 
 
-def distance(p1, p2):
-    return np.linalg.norm(np.array(p1) - np.array(p2))
+# ================= IMAGE LOADING =================
+def load_image():
+    file_name = input("Enter image name (e.g. 2.png): ").strip()
+    input_path = os.path.join("images", file_name)
+
+    image = cv2.imread(input_path)
+    if image is None:
+        print("Image not found")
+        exit()
+
+    return image, file_name, input_path
 
 
-file_name = input("Enter image name (e.g. 2.png): ").strip()
-input_path = os.path.join("images", file_name)
+# ================= IMAGE PREPROCESSING =================
+def preprocess_image(image):
+    image = cv2.resize(image, (800, 500))
+    display = image.copy()
+    hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+
+    land_lower = np.array([43,110,91])
+    land_upper = np.array([77,238,161])
+    land_mask = cv2.inRange(hsv, land_lower, land_upper)
+
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    blur = cv2.GaussianBlur(gray, (7,7), 2)
+    _, thresh = cv2.threshold(blur, 127, 255, cv2.THRESH_BINARY)
+
+    thresh[land_mask == 255] = 0
+    display[land_mask == 255] = (0,200,255)
+
+    contours, _ = cv2.findContours(
+        thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE
+    )
+
+    return display, hsv, contours
 
 
-image = cv2.imread(input_path)
-if image is None:
-    print("Image not found")
-    exit()
+# ================= OBJECT EXTRACTION =================
+def extract_people_and_camps(contours, hsv, display):
+    people = []
+    camps = []
 
-file_name = os.path.basename(input_path)
-output_path = os.path.join(output_folder, file_name)
+    for cnt in contours:
+        if cv2.contourArea(cnt) < 200:
+            continue
 
-# ================= IMAGE PROCESSING =================
-image = cv2.resize(image, (800, 500))
-display = image.copy()
+        shape = detect_shape(cnt)
+        color = detect_color(cnt, hsv)
 
-hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+        x, y, w, h = cv2.boundingRect(cnt)
+        cx, cy = x + w // 2, y + h // 2
 
-# ---------- LAND MASK ----------
-land_lower = np.array([43,110,91])
-land_upper = np.array([77,238,161])
-land_mask = cv2.inRange(hsv, land_lower, land_upper)
+        cv2.rectangle(display, (x,y), (x+w,y+h), (0,255,255), 1)
+        cv2.putText(
+            display, f"{color} {shape}", (x,y-6),
+            cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0,0,255), 1
+        )
 
-gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-blur = cv2.GaussianBlur(gray, (7,7), 2)
-_, thresh = cv2.threshold(blur, 127, 255, cv2.THRESH_BINARY)
+        if shape in AGE_PRIORITY and color in EMERGENCY_PRIORITY:
+            people.append({
+                "center": (cx,cy),
+                "age_p": AGE_PRIORITY[shape],
+                "emg_p": EMERGENCY_PRIORITY[color],
+                "base_priority": AGE_PRIORITY[shape] * EMERGENCY_PRIORITY[color]
+            })
 
-thresh[land_mask == 255] = 0
+        if shape == "Circle" and color in CAMP_CAPACITY:
+            camps.append({
+                "center": (cx,cy),
+                "color": color,
+                "capacity": CAMP_CAPACITY[color],
+                "assigned": []
+            })
 
-contours, _ = cv2.findContours(
-    thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE
-)
-
-display[land_mask == 255] = (0,200,255)
-
-
-people = []
-camps = []
-
-
-for cnt in contours:
-    if cv2.contourArea(cnt) < 200:
-        continue
-
-    shape = detect_shape(cnt)
-    color = detect_color(cnt, hsv)
-
-    x,y,w,h = cv2.boundingRect(cnt)
-    cx, cy = x + w//2, y + h//2
-
-    cv2.rectangle(display, (x,y), (x+w,y+h), (0,255,255), 1)
-    cv2.putText(display, f"{color} {shape}", (x,y-6),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0,0,255), 1)
-
-    if shape in AGE_PRIORITY and color in EMERGENCY_PRIORITY:
-        people.append({
-            "center": (cx,cy),
-            "age_p": AGE_PRIORITY[shape],
-            "emg_p": EMERGENCY_PRIORITY[color],
-            "base_priority": AGE_PRIORITY[shape]*EMERGENCY_PRIORITY[color]
-        })
-
-    if shape == "Circle" and color in CAMP_CAPACITY:
-        camps.append({
-            "center": (cx,cy),
-            "color": color,
-            "capacity": CAMP_CAPACITY[color],
-            "assigned": []
-        })
+    return people, camps
 
 
-assignments = []
-for p in people:
+# ================= ASSIGNMENT LOGIC =================
+def assign_people_to_camps(people, camps):
+    assignments = []
+
+    for p in people:
+        for c in camps:
+            d = distance(p["center"], c["center"])
+            score = p["base_priority"] / (d + 1)
+            assignments.append({"p": p, "c": c, "score": score})
+
+    assignments.sort(key=lambda x: x["score"], reverse=True)
+
+    used = set()
+    for a in assignments:
+        if id(a["p"]) in used:
+            continue
+        if len(a["c"]["assigned"]) >= a["c"]["capacity"]:
+            continue
+        a["c"]["assigned"].append(a["p"])
+        used.add(id(a["p"]))
+
+
+# ================= OUTPUT & REPORT =================
+def print_results(file_name, people, camps):
+    print(f"IMAGE: {file_name}\n")
+
+    camp_scores = []
     for c in camps:
-        d = distance(p["center"], c["center"])
-        score = p["base_priority"] / (d + 1)
-        assignments.append({"p":p, "c":c, "score":score})
+        print(f"{c['color']} camp:")
+        for p in c["assigned"]:
+            print([p["age_p"], p["emg_p"]])
+        camp_scores.append(sum(p["base_priority"] for p in c["assigned"]))
 
-assignments.sort(key=lambda x: x["score"], reverse=True)
-
-used = set()
-for a in assignments:
-    if id(a["p"]) in used:
-        continue
-    if len(a["c"]["assigned"]) >= a["c"]["capacity"]:
-        continue
-    a["c"]["assigned"].append(a["p"])
-    used.add(id(a["p"]))
+    ratio = sum(camp_scores) / len(people) if people else 0
+    print("Camp priority scores:", camp_scores)
+    print("Image Priority Ratio:", round(ratio, 3))
 
 
+def save_output(display, file_name):
+    output_path = os.path.join(OUTPUT_FOLDER, file_name)
+    cv2.imwrite(output_path, display)
+    print(f"\n Output saved to: {output_path}")
 
-print(f"IMAGE: {file_name}")
-print("\n")
 
-camp_scores = []
-for c in camps:
-    print(f"{c['color']} camp:")
-    for p in c["assigned"]:
-        print([p["age_p"], p["emg_p"]])
-    camp_scores.append(sum(p["base_priority"] for p in c["assigned"]))
+# ================= MAIN =================
+def main():
+    setup_output_folder()
 
-ratio = sum(camp_scores)/len(people) if people else 0
-print("Camp priority scores:", camp_scores)
-print("Image Priority Ratio:", round(ratio,3))
+    image, file_name, _ = load_image()
+    display, hsv, contours = preprocess_image(image)
 
-cv2.imwrite(output_path, display)
-print(f"\n Output saved to: {output_path}")
+    people, camps = extract_people_and_camps(contours, hsv, display)
+    assign_people_to_camps(people, camps)
+
+    print_results(file_name, people, camps)
+    save_output(display, file_name)
+
+
+if __name__ == "__main__":
+    main()
